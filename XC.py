@@ -17,9 +17,9 @@ class Ope:
     def parser_res(res):
         if '验证访问' in res.text:
             print('访问次数过多')
-            # driver = webdriver.Chrome()
-            # driver.get(res.url)
-            sleep(60)
+            driver = webdriver.Chrome()
+            driver.get(res.url)
+            sleep(10)
             return False
         return True
 
@@ -34,7 +34,18 @@ class Ope:
         while not self.parser_res(res):
             res = req.get(self.sub_city_code, params={'cityid': city_code})
         res = res.text
-        res = json.loads(res[res.find('suggestion={') + len('suggestion='):])
+        if 'cQuery.jsonpResponse={};cQuery.jsonpResponse.suggestion=null' in res:
+            return []
+        elif not res:
+            return []
+        res = res[res.find('suggestion={') + len('suggestion='):]
+        if r"\'" in res:
+            res = res.replace(r"\'", r"\\'")
+        try:
+            res = json.loads(res)
+        except:
+            print(res)
+        # res = json.loads(res)
         return res.get('locationId', {'data': []})['data'] + res.get('subCity', {'data': []})['data']
 
     @staticmethod
@@ -123,10 +134,11 @@ class Ope:
                 res[key] = value.strip()
         res['cityId'] = city_code
 
-        if 'Location' == sub_city_code['type']:
-            res['location'] = sub_city_code['id']
-        else:
-            res['cityId'] = sub_city_code['id']
+        if isinstance(sub_city_code, dict):
+            if 'Location' == sub_city_code['type']:
+                res['location'] = sub_city_code['id']
+            else:
+                res['cityId'] = sub_city_code['id']
         return res
 
     def _get_all_hotel_num(self, city_code, sub_city_code):
@@ -150,7 +162,10 @@ class Ope:
         res = req.post(self.hotel_num, res)
         while not self.parser_res(res):
             res = req.post(self.hotel_num, res)
-        return res.json()['hotelAmount']
+        try:
+            return res.json()['hotelAmount']
+        except:
+            return re.findall('"hotelAmount":(\d*),', res.text)[0]
 
     def get_hotel_num(self, city_code, sub_city_code):
         all_num = self._get_all_hotel_num(city_code, sub_city_code)
@@ -187,15 +202,22 @@ class XC(Ope):
         loads = self.get_loads()
         for city in self.get_all_city:
             city_code = self.get_city_code(city)
+            if not city_code:
+                continue
             sub_city_code = self.get_sub_city_code(city_code)
-            for sub_city in sub_city_code:
-                if f'{city},{sub_city["name"]}' not in loads:
-                    num = self.get_hotel_num(city_code, sub_city)
-                    res = [city, sub_city["name"]] + list(num)
+            if sub_city_code:
+                for sub_city in sub_city_code:
+                    if f'{city},{sub_city["name"]}' not in loads:
+                        num = self.get_hotel_num(city_code, sub_city)
+                        res = [city, sub_city["name"]] + list(num)
+                        self.dump(res)
+            else:
+                if f'{city},{city}' not in loads:
+                    num = self.get_hotel_num(city_code, city)
+                    res = [city, city] + list(num)
                     self.dump(res)
 
 
 if __name__ == '__main__':
     xc = XC()
     xc.run()
-    # xc.signal('青岛')
